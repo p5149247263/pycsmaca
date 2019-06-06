@@ -7,7 +7,7 @@ def readme():
 
 
 setup(name='pycsmaca',
-      version='0.1',
+      version='0.1.1',
       description='Wireless networks models',
       long_description=readme(),
       classifiers=[
@@ -25,11 +25,16 @@ setup(name='pycsmaca',
       packages=['pycsmaca'],
       scripts=[],
       install_requires=[
-          'pydesim==0.1',
+          'scipy',
+          'pydesim',
+          'pyqumo',
       ],
-      dependency_links=['git+https://github.com/larioandr/pydesim.git#egg=pydesim-0.1'],
+      dependency_links=[
+          'git+https://github.com/larioandr/pydesim.git#egg=pydesim',
+          'git+https://github.com/larioandr/pyqumo.git#egg=pyqumo',
+      ],
       include_package_data=True,
       zip_safe=False,
       setup_requires=["pytest-runner"],
-      tests_require=["pytest"],      
+      tests_require=["pytest", 'pyqumo', 'pydesim'],
     )
