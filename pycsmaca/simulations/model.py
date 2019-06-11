@@ -135,8 +135,8 @@ class Frame:
 
 
 class Radio(Model):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent=None):
+        super().__init__(sim, parent=parent)
         self._position = np.asarray([0, 0])
         self.peers = []
 
@@ -184,8 +184,8 @@ class Radio(Model):
 
 
 class Channel(Model):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent=None):
+        super().__init__(sim, parent=parent)
         self._is_busy = False
 
     @property
@@ -216,8 +216,8 @@ class Transmitter(Model):
         TX = 3
         WAIT_ACK = 4
 
-    def __init__(self, address, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent, address):
+        super().__init__(sim, parent=parent)
         self.timeout = None
         self.cw = 65536
         self.backoff = -1
@@ -368,8 +368,8 @@ class Receiver(Model):
         WAIT_SEND_ACK = 5
         SEND_ACK = 6
 
-    def __init__(self, address, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent, address):
+        super().__init__(sim, parent=parent)
         self._state = Receiver.State.IDLE
         self.rxbuf = set()
         self.curpkt = None
@@ -506,8 +506,8 @@ class Receiver(Model):
 
 
 class Queue(Model):
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent):
+        super().__init__(sim, parent=parent)
 
     @property
     def source(self):
@@ -531,13 +531,16 @@ class Queue(Model):
 
 
 class Source(Model):
-    def __init__(self, address, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent, address):
+        super().__init__(sim, parent=parent)
         self.address = address
         self.seqn = 0
         self.num_packets = 0
         self.num_bits = 0
         self.packet_sizes = Statistic()
+        # Initialization:
+        if self.address != 0:
+            self.sim.schedule(0, self.generate)
 
     @property
     def queue(self):
@@ -559,17 +562,13 @@ class Source(Model):
             src=self
         )
 
-    def initialize(self):
-        if self.address != 0:
-            self.sim.schedule(0, self.generate)
-
     def __str__(self):
         return f'{self.parent}.source'
 
 
 class Sink(Model):
-    def __init__(self, address, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent, address):
+        super().__init__(sim, parent=parent)
         self.dsn = {}
         self.address = address
         self.num_packets = 0
@@ -590,16 +589,16 @@ class Sink(Model):
 
 
 class Station(Model):
-    def __init__(self, address, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, sim, parent, address):
+        super().__init__(sim, parent=parent)
 
-        self.children.add('source', Source(address, parent=self))
-        self.children.add('sink', Sink(address, parent=self))
-        self.children.add('queue', Queue(parent=self))
-        self.children.add('transmitter', Transmitter(address, parent=self))
-        self.children.add('receiver', Receiver(address, parent=self))
-        self.children.add('channel', Channel(parent=self))
-        self.children.add('radio', Radio(parent=self))
+        self.children.add('source', Source(sim, self, address))
+        self.children.add('sink', Sink(sim, self, address))
+        self.children.add('queue', Queue(sim, self))
+        self.children.add('transmitter', Transmitter(sim, self, address))
+        self.children.add('receiver', Receiver(sim, self, address))
+        self.children.add('channel', Channel(sim, self))
+        self.children.add('radio', Radio(sim, self))
 
         self.source.connections.add('queue', self.queue)
         self.queue.connections.update({
@@ -658,18 +657,11 @@ class Station(Model):
 
 
 class SaturatedNetworkModel(Model):
-    def __init__(self):
-        super().__init__()
-
-    @property
-    def stations(self):
-        return self.children.get('stations')
-
-    def initialize(self):
+    def __init__(self, sim):
+        super().__init__(sim)
         ns = self.sim.params.num_stations
-        stations = tuple(Station(i, parent=self) for i in range(ns))
+        stations = tuple(Station(sim, self, i) for i in range(ns))
         self.children.add('stations', stations)
-
         for i in range(ns):
             station = stations[i]
             radio = station.children.get('radio')
@@ -681,6 +673,10 @@ class SaturatedNetworkModel(Model):
                 if i == j:
                     continue
                 radio.peers.append(stations[j].children.get('radio'))
+
+    @property
+    def stations(self):
+        return self.children.get('stations')
 
 
 if __name__ == '__main__':
