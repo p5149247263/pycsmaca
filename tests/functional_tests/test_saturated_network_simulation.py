@@ -1,5 +1,6 @@
 from math import floor
 
+import pytest
 from numpy.testing import assert_almost_equal
 
 from pyqumo.distributions import Constant
@@ -24,7 +25,7 @@ SPEED_OF_LIGHT = 1e5   # meters per second
 
 def test_saturated_network_without_collisions():
     radius = 100
-    stime_limit = 500
+    stime_limit = 1000
 
     # First, we run the simulation:
     sr = simulate(

@@ -4,7 +4,7 @@ from enum import Enum
 
 import numpy as np
 
-from pydesim import Model, simulate, Logger, Statistic, Trace, Intervals
+from pydesim import Model, Statistic, Trace, Intervals
 
 
 class PacketType(Enum):
@@ -166,8 +166,8 @@ class Radio(Model):
         it computes the propagation delay based on the distance between this
         radio module and the peer using `position` property.
     """
-    def __init__(self, sim, parent, position=(0, 0)):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, position=(0, 0)):
+        super().__init__(sim)
         self._position = np.asarray(position)
         self.peers = []
 
@@ -182,11 +182,11 @@ class Radio(Model):
 
     @property
     def receiver(self):
-        return self.connections.get('receiver')
+        return self.connections['receiver'].module
 
     @property
     def transmitter(self):
-        return self.connections.get('transmitter')
+        return self.connections['transmitter'].module
 
     def transmit(self, pkt):
         assert isinstance(pkt, Packet)
@@ -217,13 +217,13 @@ class Radio(Model):
 class ChannelState(Model):
     """Stores the channel state and informs transmitter about updates.
     """
-    def __init__(self, sim, parent=None):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim):
+        super().__init__(sim)
         self._is_busy = False
 
     @property
     def transmitter(self):
-        return self.connections.get('transmitter')
+        return self.connections['transmitter'].module
 
     def set_ready(self):
         self._is_busy = False
@@ -250,8 +250,8 @@ class Transmitter(Model):
         TX = 3
         WAIT_ACK = 4
 
-    def __init__(self, sim, parent, address):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, address):
+        super().__init__(sim)
         self.timeout = None
         self.cw = 65536
         self.backoff = -1
@@ -279,15 +279,15 @@ class Transmitter(Model):
 
     @property
     def channel(self):
-        return self.connections.get('channel')
+        return self.connections['channel'].module
 
     @property
     def radio(self):
-        return self.connections.get('radio')
+        return self.connections['radio'].module
 
     @property
     def queue(self):
-        return self.connections.get('queue')
+        return self.connections['queue'].module
 
     def send(self, payload, rcv_addr):
         assert self.state == Transmitter.State.IDLE
@@ -406,8 +406,8 @@ class Receiver(Model):
         WAIT_SEND_ACK = 5
         SEND_ACK = 6
 
-    def __init__(self, sim, parent, address):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, address):
+        super().__init__(sim)
         self._state = Receiver.State.IDLE
         self.rxbuf = set()
         self.curpkt = None
@@ -438,19 +438,19 @@ class Receiver(Model):
 
     @property
     def radio(self):
-        return self.connections.get('radio')
+        return self.connections['radio'].module
 
     @property
     def channel(self):
-        return self.connections.get('channel')
+        return self.connections['channel'].module
 
     @property
     def transmitter(self):
-        return self.connections.get('transmitter')
+        return self.connections['transmitter'].module
 
     @property
     def sink(self):
-        return self.connections.get('sink')
+        return self.connections['sink'].module
 
     def on_rx_begin(self, pkt):
         assert pkt not in self.rxbuf
@@ -547,16 +547,16 @@ class Receiver(Model):
 # MAC Queues models
 #############################################################################
 class QueueBase(Model):
-    def __init__(self, sim, parent):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim):
+        super().__init__(sim)
 
     @property
     def source(self):
-        return self.connections.get('source')
+        return self.connections['source'].module
 
     @property
     def transmitter(self):
-        return self.connections.get('transmitter')
+        return self.connections['transmitter'].module
 
     def push(self, payload):
         raise NotImplementedError
@@ -569,8 +569,8 @@ class QueueBase(Model):
 
 
 class SaturatedQueue(QueueBase):
-    def __init__(self, sim, parent):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim):
+        super().__init__(sim)
 
     def push(self, payload):
         if self.transmitter.state == Transmitter.State.IDLE:
@@ -583,8 +583,8 @@ class SaturatedQueue(QueueBase):
 
 
 class Queue(QueueBase):
-    def __init__(self, sim, parent, capacity=None):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, capacity=None):
+        super().__init__(sim)
         assert capacity is None or abs(capacity - int(math.ceil(capacity))) == 0
         self.__capacity = capacity
         self.__data = collections.deque()
@@ -622,8 +622,8 @@ class Queue(QueueBase):
 # APP Layer: Sources, Sinks
 #############################################################################
 class SaturatedSource(Model):
-    def __init__(self, sim, parent, address, destination=0):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, address, destination=0):
+        super().__init__(sim)
         self.address = address
         self.seqn = 0
         self.num_packets = 0
@@ -636,7 +636,7 @@ class SaturatedSource(Model):
 
     @property
     def queue(self):
-        return self.connections.get('queue')
+        return self.connections['queue'].module
 
     def generate(self):
         self.seqn += 1
@@ -659,9 +659,8 @@ class SaturatedSource(Model):
 
 
 class RandomSource(Model):
-    def __init__(self, sim, parent, address, dest, intervals, sizes,
-                 active=True):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, address, dest, intervals, sizes, active=True):
+        super().__init__(sim)
         self.__address = address
         self.__seqn = 0
         self.__dest = dest
@@ -680,7 +679,7 @@ class RandomSource(Model):
 
     @property
     def queue(self):
-        return self.connections.get('queue')
+        return self.connections['queue'].module
 
     @property
     def address(self):
@@ -728,8 +727,8 @@ class RandomSource(Model):
 
 
 class Sink(Model):
-    def __init__(self, sim, parent, address):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, address):
+        super().__init__(sim)
         self.dsn = {}
         self.address = address
         self.num_packets = 0
@@ -753,14 +752,14 @@ class Sink(Model):
 # Stations Models
 #############################################################################
 class StationBase(Model):
-    def __init__(self, sim, parent, address):
-        super().__init__(sim, parent=parent)
+    def __init__(self, sim, address):
+        super().__init__(sim)
 
-        self.children.add('sink', Sink(sim, self, address))
-        self.children.add('transmitter', Transmitter(sim, self, address))
-        self.children.add('receiver', Receiver(sim, self, address))
-        self.children.add('channel', ChannelState(sim, self))
-        self.children.add('radio', Radio(sim, self))
+        self.children['sink'] = Sink(sim, address)
+        self.children['transmitter'] = Transmitter(sim, address)
+        self.children['receiver'] = Receiver(sim, address)
+        self.children['channel'] = ChannelState(sim)
+        self.children['radio'] = Radio(sim)
 
         self.transmitter.connections.update({
             'radio': self.radio,
@@ -772,7 +771,7 @@ class StationBase(Model):
             'transmitter': self.transmitter,
             'sink': self.sink,
         })
-        self.channel.connections.add('transmitter', self.transmitter)
+        self.channel.connections['transmitter'] = self.transmitter
         self.radio.connections.update({
             'receiver': self.receiver,
             'transmitter': self.transmitter,
@@ -805,13 +804,13 @@ class StationBase(Model):
 
 
 class SaturatedStation(StationBase):
-    def __init__(self, sim, parent, address):
-        super().__init__(sim, parent=parent, address=address)
+    def __init__(self, sim, address):
+        super().__init__(sim, address=address)
 
-        self.children.add('source', SaturatedSource(sim, self, address))
-        self.children.add('queue', SaturatedQueue(sim, self))
+        self.children['source'] = SaturatedSource(sim, address)
+        self.children['queue'] = SaturatedQueue(sim)
 
-        self.source.connections.add('queue', self.queue)
+        self.source.connections['queue'] = self.queue
         self.queue.connections.update({
             'transmitter': self.transmitter,
             'source': self.source,
@@ -830,18 +829,15 @@ class SaturatedStation(StationBase):
 
 
 class HalfDuplexStation(StationBase):
-    def __init__(self, sim, parent, address, dest, intervals, sizes, active,
+    def __init__(self, sim, address, dest, intervals, sizes, active,
                  queue_capacity=None):
-        super().__init__(sim, parent=parent, address=address)
+        super().__init__(sim, address=address)
 
-        self.children.add(
-            'source',
-            RandomSource(sim, self, address, dest, active=active,
-                         intervals=intervals, sizes=sizes)
-        )
-        self.children.add('queue', Queue(sim, self, queue_capacity))
+        self.children['source'] = RandomSource(
+            sim, address, dest, active=active, intervals=intervals, sizes=sizes)
+        self.children['queue'] = Queue(sim, queue_capacity)
 
-        self.source.connections.add('queue', self.queue)
+        self.source.connections['queue'] = self.queue
         self.queue.connections.update({
             'transmitter': self.transmitter,
             'source': self.source,
@@ -866,8 +862,8 @@ class SaturatedNetworkModel(Model):
     def __init__(self, sim):
         super().__init__(sim)
         ns = self.sim.params.num_stations
-        stations = tuple(SaturatedStation(sim, self, i) for i in range(ns))
-        self.children.add('stations', stations)
+        stations = tuple(SaturatedStation(sim, i) for i in range(ns))
+        self.children['stations'] = stations
         for i in range(ns):
             station = stations[i]
             radio = station.children.get('radio')
@@ -891,13 +887,13 @@ class AdHocNetworkModel(Model):
         ns = self.sim.params.num_stations
         stations = tuple(
             HalfDuplexStation(
-                sim, self, i, dest=0, active=(i > 0),
+                sim, i, dest=0, active=(i > 0),
                 intervals=sim.params.intervals,
                 sizes=sim.params.payload_size,
                 queue_capacity=sim.params.queue_capacity
             ) for i in range(ns)
         )
-        self.children.add('stations', stations)
+        self.children['stations'] = stations
         for i in range(ns):
             station = stations[i]
             radio = station.children.get('radio')
