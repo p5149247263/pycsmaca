@@ -220,6 +220,7 @@ class Sink(Model):
         self.arrival_intervals.record(self.sim.stime)
         self.data_size_stat.append(app_data.size)
         self.__num_packets_received += 1
+        self.sim.logger.debug(f'received {app_data}', src=self)
 
     def __str__(self):
         prefix = f'{self.parent}.' if self.parent else ''

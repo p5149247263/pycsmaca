@@ -62,6 +62,10 @@ class Station(Model):
             if remote_address in self.switch.table:
                 conn_name = self.switch.table[remote_address].connection
                 return self.switch.connections[conn_name].module
+            for link in self.switch.table.as_dict().values():
+                if link[1] == remote_address:
+                    conn_name = link[0]
+                    return self.switch.connections[conn_name].module
 
         #
         # Otherwise, inspect neighbours:
@@ -72,9 +76,10 @@ class Station(Model):
             return module.parent == remote_sta or test_parent_is_remote_sta(
                 module.parent)
         for iface in self.interfaces:
-            peer = iface.connections['wire'].module
-            if test_parent_is_remote_sta(peer):
-                return iface
+            if 'wire' in iface.connections:
+                peer = iface.connections['wire'].module
+                if test_parent_is_remote_sta(peer):
+                    return iface
 
         #
         # If neither found, return None:

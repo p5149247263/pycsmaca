@@ -263,6 +263,10 @@ class NetworkSwitch(Model):
         message.receiver_address = link.next_hop
         message.sender_address = iface_connection.module.address
         iface_connection.send(message)
+        self.sim.logger.debug(
+            f'forward packet {message} from connection {connection.name} '
+            f'to {iface_connection.name}', src=self
+        )
 
     def __str__(self):
         prefix = f'{self.parent}.' if self.parent is not None else ''
