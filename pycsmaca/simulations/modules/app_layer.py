@@ -34,7 +34,88 @@ class AppData:
         return f'AppData{{{fields}}}'
 
 
-class RandomSource(Model):
+class _SourceBase(Model):
+    def __init__(self, sim, data_size, source_id, dest_addr):
+        """Constructor.
+
+        :param sim: `pydesim.Simulator` object;
+        :param data_size: callable without arguments, iterable or constant;
+            represents application data size distribution;
+        :param source_id: this source ID (more like IP address, not MAC)
+        :param dest_addr: destination MAC address.
+        """
+        super().__init__(sim)
+        self.__data_size = data_size
+        self.__source_id = source_id
+        self.__dest_addr = dest_addr
+
+        # Attempt to build iterators for data size and intervals:
+        try:
+            self.__data_size_iter = iter(self.__data_size)
+        except TypeError:
+            self.__data_size_iter = None
+
+        # Statistics:
+        self.__arrival_intervals = Intervals()
+        self.__data_size_stat = Statistic()
+        self.__num_packets_sent = 0
+
+    @property
+    def arrival_intervals(self):
+        return self.__arrival_intervals
+
+    @property
+    def data_size_stat(self):
+        return self.__data_size_stat
+
+    @property
+    def data_size(self):
+        return self.__data_size
+
+    @property
+    def source_id(self):
+        return self.__source_id
+
+    @property
+    def dest_addr(self):
+        return self.__dest_addr
+
+    @property
+    def num_packets_sent(self):
+        return self.__num_packets_sent
+
+    def _generate(self):
+        try:
+            data_size = self.__get_next_size()
+        except StopIteration:
+            return False # do nothing if stop iteration fired
+        else:
+            app_data = AppData(
+                dest_addr=self.dest_addr, size=data_size,
+                source_id=self.source_id, created_at=self.sim.stime
+            )
+            self.connections['network'].send(app_data)
+            # Recording statistics:
+            self.arrival_intervals.record(self.sim.stime)
+            self.data_size_stat.append(data_size)
+            self.__num_packets_sent += 1
+            self.sim.logger.debug(f'generated new packet {app_data}', src=self)
+            return True
+
+    def __get_next_size(self):
+        if self.__data_size_iter:
+            return next(self.__data_size_iter)
+        try:
+            return self.data_size()
+        except TypeError:
+            return self.data_size
+
+    def __str__(self):
+        prefix = f'{self.parent}.' if self.parent else ''
+        return f'{prefix}Source({self.source_id})'
+
+
+class RandomSource(_SourceBase):
     """This module provides data source with independent intervals and sizes.
 
     `RandomSource` generates `AppData` packets with a given bit size
@@ -69,11 +150,8 @@ class RandomSource(Model):
         :param source_id: this source ID (more like IP address, not MAC)
         :param dest_addr: destination MAC address.
         """
-        super().__init__(sim)
-        self.__data_size = data_size
+        super().__init__(sim, data_size, source_id, dest_addr)
         self.__interval = interval
-        self.__source_id = source_id
-        self.__dest_addr = dest_addr
 
         # Attempt to build iterators for data size and intervals:
         try:
@@ -81,66 +159,20 @@ class RandomSource(Model):
         except TypeError:
             self.__interval_iter = None
 
-        try:
-            self.__data_size_iter = iter(self.__data_size)
-        except TypeError:
-            self.__data_size_iter = None
-
-        # Statistics:
-        self.__arrival_intervals = Intervals()
-        self.__data_size_stat = Statistic()
-        self.__num_packets_sent = 0
-
         # Initialize:
-        self.__schedule_next_arrival()
-
-    @property
-    def arrival_intervals(self):
-        return self.__arrival_intervals
-
-    @property
-    def data_size_stat(self):
-        return self.__data_size_stat
-
-    @property
-    def data_size(self):
-        return self.__data_size
+        self._schedule_next_arrival()
 
     @property
     def interval(self):
         return self.__interval
 
-    @property
-    def source_id(self):
-        return self.__source_id
-
-    @property
-    def dest_addr(self):
-        return self.__dest_addr
-
-    @property
-    def num_packets_sent(self):
-        return self.__num_packets_sent
-
     def _generate(self):
-        try:
-            data_size = self.__get_next_size()
-        except StopIteration:
-            pass  # do nothing if stop iteration fired
-        else:
-            app_data = AppData(
-                dest_addr=self.dest_addr, size=data_size,
-                source_id=self.source_id, created_at=self.sim.stime
-            )
-            self.connections['network'].send(app_data)
-            self.__schedule_next_arrival()
-            # Recording statistics:
-            self.arrival_intervals.record(self.sim.stime)
-            self.data_size_stat.append(data_size)
-            self.__num_packets_sent += 1
-            self.sim.logger.debug(f'generated new packet {app_data}', src=self)
+        if super()._generate():
+            self._schedule_next_arrival()
+            return True
+        return False
 
-    def __get_next_interval(self):
+    def _get_next_interval(self):
         if self.__interval_iter is not None:
             return next(self.__interval_iter)
         try:
@@ -148,23 +180,46 @@ class RandomSource(Model):
         except TypeError:
             return self.interval
 
-    def __get_next_size(self):
-        if self.__data_size_iter:
-            return next(self.__data_size_iter)
+    def _schedule_next_arrival(self):
         try:
-            return self.data_size()
-        except TypeError:
-            return self.data_size
-
-    def __schedule_next_arrival(self):
-        try:
-            self.sim.schedule(self.__get_next_interval(), self._generate)
+            self.sim.schedule(self._get_next_interval(), self._generate)
         except StopIteration:
             pass
 
-    def __str__(self):
-        prefix = f'{self.parent}.' if self.parent else ''
-        return f'{prefix}Source({self.source_id})'
+
+class ControlledSource(_SourceBase):
+    """This module provides a data source generating packets on request.
+
+    `ControlledSource` generates `AppData` packets with a given bit size
+    distribution. Generation takes place when `get_next()` method is called.
+
+    Note: size distribution are passed to the constructor as callable objects,
+    but they also can be specified with constants or iterables.
+
+    Source directs its packets to network layer. Packets have a given
+    destination address. Source is specified with its SourceID.
+
+    Provided statistics:
+    - `arrival_intervals`: inter-arrival intervals;
+    - `data_size_stat`: generated data sizes statistics.
+
+    Connections:
+    - 'network': connected network layer module; should implement
+        `handle_message(app_data)` method.
+    """
+    def __init__(self, sim, data_size, source_id, dest_addr):
+        """Create `ControlledSource` module.
+
+        :param sim: `pydesim.Simulator` object;
+        :param data_size: callable without arguments, iterable or constant;
+            represents application data size distribution;
+        :param source_id: this source ID (more like IP address, not MAC)
+        :param dest_addr: destination MAC address.
+        """
+        super().__init__(sim, data_size, source_id, dest_addr)
+
+    def get_next(self):
+        self._generate()
 
 
 class Sink(Model):

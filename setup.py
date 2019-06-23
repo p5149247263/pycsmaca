@@ -35,6 +35,6 @@ setup(name='pycsmaca',
       ],
       include_package_data=True,
       zip_safe=False,
-      setup_requires=["pytest-runner"],
+      setup_requires=["pytest-runner", "pytest-repeat"],
       tests_require=["pytest", 'pyqumo', 'pydesim'],
     )

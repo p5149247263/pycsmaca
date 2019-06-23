@@ -8,7 +8,7 @@ from pyqumo.distributions import Constant, Exponential
 from pycsmaca.simulations import WirelessHalfDuplexLineNetwork
 
 
-SIM_TIME_LIMIT = 1000
+SIM_TIME_LIMIT = 1500
 PAYLOAD_SIZE = Constant(100.0)      # 100 bits data payload
 SOURCE_INTERVAL = Constant(6.0)     # 1 second between packets
 MAC_HEADER = 50             # bits
@@ -222,5 +222,5 @@ def test_wireless_half_duplex_line_network_with_cross_traffic(num_stations):
             next_busy_rate = next_if.transmitter.busy_trace.timeavg()
             prev_busy_rate = prev_if.transmitter.busy_trace.timeavg()
             assert_allclose(
-                next_busy_rate, prev_busy_rate + expected_busy_ratio, rtol=0.2
+                next_busy_rate, prev_busy_rate + expected_busy_ratio, rtol=0.3
             )

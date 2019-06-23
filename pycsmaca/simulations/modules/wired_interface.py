@@ -1,5 +1,5 @@
 from numpy import inf
-from pydesim import Model, Trace
+from pydesim import Model, Trace, Statistic
 
 
 class WireFrame:
@@ -79,6 +79,8 @@ class WiredTransceiver(Model):
         self.__num_transmitted_bits = 0
         self.__tx_busy_trace = Trace()
         self.__tx_busy_trace.record(0, 0)
+        self.__service_time = Statistic()
+        self.__service_started_at = None
         # Initialization:
         self.sim.schedule(self.sim.stime, self.start)
 
@@ -127,6 +129,10 @@ class WiredTransceiver(Model):
         return self.__tx_busy_trace
 
     @property
+    def service_time(self):
+        return self.__service_time
+
+    @property
     def tx_frame(self):
         return self.__tx_frame
 
@@ -148,24 +154,34 @@ class WiredTransceiver(Model):
             self.sim.schedule(duration, self.handle_tx_end)
             self.__tx_frame = frame
             self.__tx_busy_trace.record(self.sim.stime, 1)
+            self.__service_started_at = self.sim.stime
+            self.sim.logger.debug(f'start transmitting frame {frame}', src=self)
         elif connection.name == 'peer':
             self.sim.schedule(
                 message.duration, self.handle_rx_end, args=(message,)
             )
             self.__rx_frame = message
             self.__rx_busy_trace.record(self.sim.stime, 1)
+            self.sim.logger.debug(f'start receiving frame {message}', src=self)
 
     def handle_tx_end(self):
-        self.__wait_ifs = True
         self.sim.schedule(self.ifs, self.handle_ifs_end)
+        # Record statistics:
         self.__num_transmitted_packets += 1
         self.__num_transmitted_bits += self.__tx_frame.size
+        # Update state variables:
+        self.__wait_ifs = True
         self.__tx_frame = None
+        self.sim.logger.debug(f'finish transmitting, waiting IFS', src=self)
 
     def handle_ifs_end(self):
         self.__wait_ifs = False
         self.connections['queue'].module.get_next(self)
+        # Record statistics:
         self.__tx_busy_trace.record(self.sim.stime, 0)
+        self.__service_time.append(self.sim.stime - self.__service_started_at)
+        self.__service_started_at = None
+        self.sim.logger.debug(f'IFS end, ready to transmit', src=self)
 
     def handle_rx_end(self, frame):
         if 'up' in self.connections:
@@ -174,6 +190,7 @@ class WiredTransceiver(Model):
         self.__num_received_frames += 1
         self.__num_received_bits += frame.size
         self.__rx_busy_trace.record(self.sim.stime, 0)
+        self.sim.logger.debug(f'finish receiving frame', src=self)
 
     def __str__(self):
         prefix = f'{self.parent}.' if self.parent else ''

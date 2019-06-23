@@ -133,3 +133,20 @@ class Queue(Model):
     def __str__(self):
         prefix = f'{self.parent}.' if self.parent is not None else ''
         return f'{prefix}Queue'
+
+
+class SaturatedQueue(Queue):
+    """Saturated queue, that requests source a new packet when it needs it.
+
+    This queue is bound with `ControlledSource` module. When it is empty, and
+    one of its connected services requests a packet with `q.get_next(service)`
+    call, this queue calls `source.get_next()` for the new packet generation.
+    """
+    def __init__(self, sim, source, capacity=None):
+        super().__init__(sim, capacity)
+        self.source = source
+
+    def get_next(self, service):
+        if self.empty():
+            self.source.get_next()
+        super().get_next(service)

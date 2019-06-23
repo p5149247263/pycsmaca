@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 
 from numpy.random.mtrand import randint
@@ -33,9 +34,9 @@ class PDUBase:
 
 class DataPDU(PDUBase):
     def __init__(
-            self, packet, header_size,
+            self, packet, header_size, seqn,
             sender_address=None,
-            receiver_address=None
+            receiver_address=None,
     ):
         assert isinstance(packet, NetworkPacket)
         self.__packet = packet
@@ -48,6 +49,7 @@ class DataPDU(PDUBase):
             else packet.receiver_address
         )
         self.__header_size = header_size
+        self.__seqn = seqn
 
     @property
     def packet(self):
@@ -73,11 +75,14 @@ class DataPDU(PDUBase):
     def receiver_address(self):
         return self.__receiver
 
+    @property
+    def seqn(self):
+        return self.__seqn
+
     def __str__(self):
         link = f'{self.sender_address}=>{self.receiver_address}'
-        size = f'{self.size}'
-        body = f' | {self.packet}' if self.packet else ''
-        return f'DATA{{{size},{link}{body}}}'
+        size = math.ceil(self.size)
+        return f'PDU{{{link}, seqn:{self.seqn}, {size:d}b}}'
 
 
 class AckPDU(PDUBase):
@@ -106,7 +111,7 @@ class AckPDU(PDUBase):
     def __str__(self):
         link = f'{self.sender_address}=>{self.receiver_address}'
         size = f'{self.size}'
-        return f'ACK{{{size},{link}}}'
+        return f'ACK{{{link}, {size}b}}'
 
 
 class ChannelState(Model):
@@ -184,6 +189,7 @@ class Transmitter(Model):
         self.num_retries = None
         self.pdu = None
         self.__state = Transmitter.State.IDLE
+        self.__seqn = 0
 
         # Statistics:
         self.backoff_vector = Statistic()
@@ -272,11 +278,12 @@ class Transmitter(Model):
             # Create the PDU:
             #
             self.pdu = DataPDU(
-                packet,
+                packet, seqn=self.__seqn,
                 header_size=self.phy_header_size + self.mac_header_size,
                 sender_address=self.address,
                 receiver_address=packet.receiver_address
             )
+            self.__seqn += 1
 
             self.__start_service_time = self.sim.stime
             self.backoff_vector.append(self.backoff)
@@ -368,6 +375,7 @@ class Transmitter(Model):
     def handle_backoff_timeout(self):
         if self.backoff == 0:
             self.state = Transmitter.State.TX
+            self.sim.logger.debug(f'transmitting {self.pdu}', src=self)
             self.radio.transmit(self.pdu)
         else:
             assert self.backoff > 0
@@ -435,6 +443,11 @@ class Receiver(Model):
     @state.setter
     def state(self, state):
         if state != self.__state:
+            if self.__state == Receiver.State.IDLE:
+                self.__busy_trace.record(self.sim.stime, 1)
+            elif state == Receiver.State.IDLE:
+                self.__busy_trace.record(self.sim.stime, 0)
+
             self.sim.logger.debug(
                 f'{self.__state.name} -> {state.name}', src=self
             )
@@ -471,6 +484,10 @@ class Receiver(Model):
         return self.__num_collisions
 
     @property
+    def busy_trace(self):
+        return self.__busy_trace
+
+    @property
     def radio(self):
         return self.connections['radio'].module
 
@@ -494,12 +511,16 @@ class Receiver(Model):
         return 0
 
     def start_receive(self, pdu):
-        assert pdu not in self.__rxbuf
+        if pdu in self.__rxbuf:
+            self.sim.logger.error(
+                f"PDU {pdu} is already in the buffer:\n{self.__rxbuf}",
+                src=self
+            )
+            raise RuntimeError(f'PDU is already in the buffer, PDU={pdu}')
 
         if self.state is Receiver.State.IDLE and not self.__rxbuf:
             self.state = Receiver.State.RX
             self.channel.set_busy()
-            self.__busy_trace.record(self.sim.stime, 1)
 
         elif (self.state is Receiver.State.RX or (
                 self.state is Receiver.State.IDLE and self.__rxbuf)):
@@ -580,8 +601,8 @@ class Receiver(Model):
             sender_address=self.address,
             receiver_address=self.__cur_tx_pdu.sender_address,
         )
-        self.radio.transmit(ack)
         self.state = Receiver.State.SEND_ACK
+        self.radio.transmit(ack)
 
     def __str__(self):
         prefix = f'{self.parent}.' if self.parent else ''
@@ -645,6 +666,10 @@ class WirelessInterface(Model):
     @property
     def channel_state(self):
         return self.children['channel_state']
+
+    @property
+    def radio(self):
+        return self.children['radio']
 
     def handle_message(self, message, connection=None, sender=None):
         if connection.name == 'user':

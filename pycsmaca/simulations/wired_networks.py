@@ -2,7 +2,7 @@ from pydesim import Model
 
 from pycsmaca.simulations.modules import RandomSource, WiredTransceiver, Queue, \
     WiredInterface
-from .station import Station
+from pycsmaca.simulations.modules.station import Station
 
 
 class WiredLineNetwork(Model):
@@ -67,6 +67,14 @@ class WiredLineNetwork(Model):
         return self.children['stations']
 
     @property
+    def clients(self):
+        return self.stations[:-1]
+
+    @property
+    def server(self):
+        return self.stations[-1]
+
+    @property
     def num_stations(self):
         return len(self.stations)
 
@@ -97,3 +105,76 @@ class WiredLineNetwork(Model):
         print('Network components:')
         for m in get_all_leafs(self):
             print(f'+ {m}')
+
+    # noinspection PyTypeChecker
+    def describe_topology(self):
+        def str_sid(c):
+            return c.source.source_id if c.source else '<NONE>'
+
+        def str_ifaces(c):
+            _prefix = "\n\t\t\t"
+            return _prefix + _prefix.join([
+                f'[addr:{iface.address}], '
+                f'connected to: {iface.connections["wire"].module.address}'
+                for i, iface in enumerate(c.interfaces)
+            ])
+
+        def str_sw_table(c):
+            d = c.switch.table.as_dict()
+            if not d:
+                return 'EMPTY'
+            return "\n\t\t\t" + "\n\t\t\t".join([
+                f'{key} via {val[1]} (interface "{val[0]}")'
+                for key, val in d.items()
+            ])
+
+        s1 = 'NETWORK TOPOLOGY'
+        s2 = f'- num stations: {self.num_stations}'
+        s3 = '- clients:\n\t' + '\n\t'.join([
+            f'{i}: SID={str_sid(cli)}\n\t\t- interfaces: {str_ifaces(cli)}'
+            f'\n\t\t- switching table:{str_sw_table(cli)}'
+            for i, cli in enumerate(self.clients)
+        ])
+        s4 = f'- server:\n\t\t- interfaces: {str_ifaces(self.server)}'
+        return '\n'.join([s1, s2, s3, s4])
+
+    # noinspection PyUnresolvedReferences
+    def get_stats(self):
+        from collections import namedtuple
+        client_fields = [
+            'index', 'service_time', 'queue_size', 'tx_busy', 'rx_busy',
+            'arrival_intervals', 'num_packets_sent', 'delay', 'sid',
+        ]
+        server_fields = [
+            'arrival_intervals', 'num_packets_received',
+        ]
+        client_class = namedtuple('Client', client_fields)
+        server_class = namedtuple('Server', server_fields)
+
+        _client_sources = [cli.source for cli in self.clients]
+        _client_ifaces = [(cli.interfaces[0], cli.interfaces[-1])
+                          for cli in self.clients]
+        _srv = self.server
+
+        clients = [
+            client_class(
+                index=i,
+                service_time=out_if.transceiver.service_time.mean(),
+                queue_size=out_if.queue.size_trace.timeavg(),
+                tx_busy=out_if.transceiver.tx_busy_trace.timeavg(),
+                rx_busy=inp_if.transceiver.rx_busy_trace.timeavg(),
+                arrival_intervals=(
+                    src.arrival_intervals.statistic().mean() if src else None),
+                num_packets_sent=out_if.transceiver.num_transmitted_packets,
+                delay=(
+                    _srv.sink.source_delays.get(
+                        src.source_id).mean() if src else None),
+                sid=(src.source_id if src else None),
+            ) for i, (src, (inp_if, out_if)) in enumerate(
+                zip(_client_sources, _client_ifaces))
+        ]
+        server = server_class(
+            arrival_intervals=_srv.sink.arrival_intervals.statistic().mean(),
+            num_packets_received=_srv.sink.num_packets_received,
+        )
+        return (client_fields, clients), (server_fields, server)

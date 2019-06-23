@@ -2,7 +2,8 @@ import pytest
 from numpy import argmin, cumsum, inf, asarray
 from pydesim import Model, simulate, Statistic, Intervals
 from unittest.mock import Mock, patch, ANY
-from pycsmaca.simulations.modules.app_layer import RandomSource, AppData, Sink
+from pycsmaca.simulations.modules.app_layer import RandomSource, AppData, \
+    Sink, ControlledSource
 
 
 class DummyModel(Model):
@@ -294,8 +295,152 @@ def test_sink_module_records_statistics():
         sink.source_delays[sids[0]] = Statistic()
 
 
-
 def test_sink_model_implements_str():
     sim = Mock()
     sink = Sink(sim)
     assert str(sink) == 'Sink'
+
+
+#############################################################################
+# TEST ControlledSource MODULE
+#############################################################################
+
+# noinspection PyProtectedMember
+def test_controlled_source_generates_packets():
+    """In this test we check that `ControlledSource` generates `AppData`.
+    """
+    # First, we create the `ControlledSource` module, validate it is
+    # inherited from `pydesim.Module` and check that upon construction nothing
+    # being scheduled:
+    sim = Mock()
+    sim.stime = 0
+    source = ControlledSource(
+        sim, data_size=Mock(return_value=42), source_id=34, dest_addr=13)
+    assert isinstance(source, Model)
+    sim.schedule.assert_not_called()
+
+    # Define a mock for NetworkLayer module and establish a connection:
+    network_service_mock = Mock()
+    source.connections['network'] = network_service_mock
+
+    # Now we call method `get_next()` method and make sure that it sends a
+    # packet via the 'network' connection.
+    # Exactly it means that the connected module `handle_message(packet)`
+    # method is called using `sim.schedule`, which is expected to be called
+    # from within `source.connections['network']` connection.
+    # We also make sure that was the only call, no next arrival scheduled.
+    with patch('pycsmaca.simulations.modules.app_layer.AppData') as AppDataMock:
+        _spec = dict(dest_addr=13, size=42, source_id=34, created_at=0)
+        _packet = Mock(**_spec)
+        AppDataMock.return_value = _packet
+
+        source.get_next()
+
+        AppDataMock.assert_called_with(**_spec)
+
+        rev_conn = source.connections['network'].reverse
+        sim.schedule.assert_called_once_with(
+            0, network_service_mock.handle_message, args=(_packet,),
+            kwargs={'sender': source, 'connection': rev_conn}
+        )
+
+
+# noinspection PyProtectedMember
+def test_controlled_source_can_use_constant_size_distribution():
+    """Validate that numeric constant can be used instead of size distribution.
+    """
+    sim = Mock()
+    sim.stime = 0
+    source = ControlledSource(sim, data_size=123, source_id=0, dest_addr=1)
+
+    network_service_mock = Mock()
+    source.connections['network'] = network_service_mock
+
+    with patch('pycsmaca.simulations.modules.app_layer.AppData') as AppDataMock:
+        _spec = dict(dest_addr=1, size=123, source_id=0, created_at=0)
+        _packet = Mock(**_spec)
+        AppDataMock.return_value = _packet
+
+        source.get_next()
+
+        AppDataMock.assert_called_with(**_spec)
+
+
+# noinspection PyProtectedMember
+def test_controlled_source_can_use_finite_data_size_distributions():
+    """Validate `ControlledSource` will stop if data size is a finite tuple.
+    """
+    sim = Mock()
+    sim.stime = 0
+    source = ControlledSource(sim, data_size=(10, 20), source_id=0, dest_addr=1)
+
+    network_service_mock = Mock()
+    source.connections['network'] = network_service_mock
+
+    with patch('pycsmaca.simulations.modules.app_layer.AppData') as AppDataMock:
+        source.get_next()
+        AppDataMock.assert_called_with(
+            dest_addr=1, source_id=0, size=10, created_at=0)
+        AppDataMock.reset_mock()
+
+        sim.stime = 5.2
+        source.get_next()
+        AppDataMock.assert_called_with(
+            dest_addr=1, source_id=0, size=20, created_at=5.2)
+        AppDataMock.reset_mock()
+
+        sim.schedule.reset_mock()
+        source.get_next()
+        AppDataMock.assert_not_called()
+        sim.schedule.assert_not_called()
+
+
+# noinspection PyProtectedMember
+def test_controlled_source_provides_statistics():
+    """Validate that `ControlledSource` provides statistics.
+    """
+    intervals = (10, 12, 15, 17)
+    data_size = (123, 453, 245, 321)
+
+    class SourceController(Model):
+        def __init__(self, sim, src):
+            super().__init__(sim)
+            self.iterator = iter(intervals)
+            self.src = src
+            self.sim.schedule(next(self.iterator), self.handle_timeout)
+
+        def handle_timeout(self):
+            self.src.get_next()
+            try:
+                interval = next(self.iterator)
+            except StopIteration:
+                pass
+            else:
+                self.sim.schedule(interval, self.handle_timeout)
+
+    class TestModel(Model):
+        def __init__(self, sim):
+            super().__init__(sim)
+            self.source = ControlledSource(
+                sim, source_id=34, dest_addr=13,
+                data_size=Mock(side_effect=data_size),
+            )
+            self.network = DummyModel(sim, 'Network')
+            self.source.connections['network'] = self.network
+            self.controller = SourceController(sim, self.source)
+
+    ret = simulate(TestModel, stime_limit=sum(intervals))
+
+    assert ret.data.source.data_size_stat.as_tuple() == data_size
+    assert ret.data.source.arrival_intervals.as_tuple() == intervals
+
+    # Also check that we can not replace statistics:
+    with pytest.raises(AttributeError):
+        from pydesim import Intervals
+        ret.data.source.arrival_intervals = Intervals()
+    with pytest.raises(AttributeError):
+        from pydesim import Statistic
+        ret.data.source.data_size_stat = Statistic()
+
+    # Check that source records the number of packets being sent:
+    assert ret.data.source.num_packets_sent == 4

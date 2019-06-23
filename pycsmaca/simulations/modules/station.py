@@ -30,7 +30,7 @@ class Station(Model):
     
     @property
     def source(self):
-        return self.children['source']
+        return self.children['source'] if 'source' in self.children else None
     
     @property
     def sink(self):

@@ -26,7 +26,7 @@ class AirFrame:
         return self.pdu.size / self.bitrate + self.preamble
 
     def __str__(self):
-        return f"Frame[{self.duration:.9f}s | {self.pdu}]"
+        return f"Frame[{self.duration:.6f}s with {self.pdu}]"
 
     def __repr__(self):
         return str(self)
@@ -127,12 +127,14 @@ class Radio(Model):
 
     def transmit(self, pdu):
         frame = AirFrame(pdu, self.preamble, self.bitrate)
+        self.sim.logger.debug(f'transmitting frame: {frame}', src=self)
         peers = self.connection_manager.get_peers(self)
         for peer in peers:
             distance = norm(self.position - peer.position)
             delay = distance / self.sim.params.speed_of_light
             self.sim.schedule(delay, peer.receive, args=(frame,))
         self.sim.schedule(frame.duration, self.handle_frame_transmitted)
+        self.receiver.start_transmit()
 
     def receive(self, frame):
         """This method is called by peers when they send a frame to this radio.
@@ -148,6 +150,7 @@ class Radio(Model):
         self.receiver.finish_receive(frame.pdu)
 
     def handle_frame_transmitted(self):
+        self.sim.logger.debug('finished transmit', src=self)
         self.transmitter.finish_transmit()
         self.receiver.finish_transmit()
 
