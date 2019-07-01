@@ -41,11 +41,11 @@ def collision_domain_network(
     simret_class = namedtuple('SimRet', ['clients', 'server', 'network'])
     client_class = namedtuple('Client', [
         'service_time', 'num_retries', 'queue_size', 'busy',
-        'arrival_intervals', 'num_packets_sent',
+        'source_intervals', 'num_packets_sent', 'queue_drop_ratio',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_rx_collided', 'num_rx_success',
-        'num_packets_received',
+        'num_packets_received', 'collision_ratio',
     ])
 
     clients = [
@@ -54,8 +54,9 @@ def collision_domain_network(
             num_retries=cli.interfaces[0].transmitter.num_retries_vector,
             queue_size=cli.interfaces[0].queue.size_trace,
             busy=cli.interfaces[0].transmitter.busy_trace,
-            arrival_intervals=cli.source.arrival_intervals.statistic(),
+            source_intervals=cli.source.arrival_intervals.statistic(),
             num_packets_sent=cli.interfaces[0].transmitter.num_sent,
+            queue_drop_ratio=cli.interfaces[0].queue.drop_ratio,
         ) for cli in ret.data.clients
     ]
 
@@ -65,6 +66,7 @@ def collision_domain_network(
         num_rx_collided=srv.interfaces[0].receiver.num_collisions,
         num_rx_success=srv.interfaces[0].receiver.num_received,
         num_packets_received=srv.sink.num_packets_received,
+        collision_ratio=srv.interfaces[0].receiver.collision_ratio,
     )
 
     return simret_class(clients=clients, server=server, network=ret.data)
@@ -101,11 +103,11 @@ def collision_domain_saturated_network(
     simret_class = namedtuple('SimRet', ['clients', 'server', 'network'])
     client_class = namedtuple('Client', [
         'service_time', 'num_retries', 'queue_size', 'busy',
-        'arrival_intervals', 'num_packets_sent',
+        'source_intervals', 'num_packets_sent',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_rx_collided', 'num_rx_success',
-        'num_packets_received',
+        'num_packets_received', 'collision_ratio',
     ])
 
     clients = [
@@ -114,7 +116,7 @@ def collision_domain_saturated_network(
             num_retries=cli.interfaces[0].transmitter.num_retries_vector,
             queue_size=cli.interfaces[0].queue.size_trace,
             busy=cli.interfaces[0].transmitter.busy_trace,
-            arrival_intervals=cli.source.arrival_intervals.statistic(),
+            source_intervals=cli.source.arrival_intervals.statistic(),
             num_packets_sent=cli.interfaces[0].transmitter.num_sent,
         ) for cli in ret.data.clients
     ]
@@ -125,6 +127,7 @@ def collision_domain_saturated_network(
         num_rx_collided=srv.interfaces[0].receiver.num_collisions,
         num_rx_success=srv.interfaces[0].receiver.num_received,
         num_packets_received=srv.sink.num_packets_received,
+        collision_ratio=srv.interfaces[0].receiver.collision_ratio,
     )
 
     return simret_class(clients=clients, server=server, network=ret.data)
@@ -164,11 +167,12 @@ def wireless_half_duplex_line_network(
     simret_class = namedtuple('SimRet', ['clients', 'server', 'network'])
     client_class = namedtuple('Client', [
         'service_time', 'num_retries', 'queue_size', 'tx_busy', 'rx_busy',
-        'arrival_intervals', 'num_packets_sent', 'delay', 'sid',
+        'source_intervals', 'num_packets_sent', 'delay', 'sid',
+        'arrival_intervals', 'queue_drop_ratio', 'collision_ratio',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_rx_collided', 'num_rx_success',
-        'num_packets_received',
+        'num_packets_received', 'collision_ratio',
     ])
 
     # Helper lists and objects:
@@ -183,12 +187,14 @@ def wireless_half_duplex_line_network(
             queue_size=iface.queue.size_trace,
             tx_busy=iface.transmitter.busy_trace,
             rx_busy=iface.receiver.busy_trace,
-            arrival_intervals=(
+            source_intervals=(
                 src.arrival_intervals.statistic() if src else None),
             num_packets_sent=iface.transmitter.num_sent,
-            delay=(
-                _srv.sink.source_delays.get(src.source_id) if src else None),
+            delay=(_srv.sink.source_delays.get(src.source_id) if src else None),
             sid=(src.source_id if src else None),
+            arrival_intervals=iface.queue.arrival_intervals.statistic(),
+            queue_drop_ratio=iface.queue.drop_ratio,
+            collision_ratio=iface.receiver.collision_ratio,
         ) for src, iface in zip(_client_sources, _client_ifaces)
     ]
     server = server_class(
@@ -196,6 +202,7 @@ def wireless_half_duplex_line_network(
         num_rx_collided=_srv.interfaces[0].receiver.num_collisions,
         num_rx_success=_srv.interfaces[0].receiver.num_received,
         num_packets_received=_srv.sink.num_packets_received,
+        collision_ratio=_srv.interfaces[0].receiver.collision_ratio,
     )
 
     return simret_class(clients=clients, server=server, network=ret.data)
@@ -232,7 +239,8 @@ def wired_line_network(
     simret_class = namedtuple('SimRet', ['clients', 'server', 'network'])
     client_class = namedtuple('Client', [
         'service_time', 'queue_size', 'tx_busy', 'rx_busy',
-        'arrival_intervals', 'num_packets_sent', 'delay', 'sid',
+        'source_intervals', 'num_packets_sent', 'delay', 'sid',
+        'arrival_intervals', 'queue_drop_ratio',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_packets_received',
@@ -250,12 +258,13 @@ def wired_line_network(
             queue_size=out_if.queue.size_trace,
             tx_busy=out_if.transceiver.tx_busy_trace,
             rx_busy=inp_if.transceiver.rx_busy_trace,
-            arrival_intervals=(
+            source_intervals=(
                 src.arrival_intervals.statistic() if src else None),
             num_packets_sent=out_if.transceiver.num_transmitted_packets,
-            delay=(
-                _srv.sink.source_delays.get(src.source_id) if src else None),
+            delay=(_srv.sink.source_delays.get(src.source_id) if src else None),
             sid=(src.source_id if src else None),
+            arrival_intervals=out_if.queue.arrival_intervals.statistic(),
+            queue_drop_ratio=out_if.queue.drop_ratio,
         ) for src, (inp_if, out_if) in zip(_client_sources, _client_ifaces)
     ]
     server = server_class(

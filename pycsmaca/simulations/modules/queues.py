@@ -1,6 +1,6 @@
 from collections import deque
 
-from pydesim import Model, Trace
+from pydesim import Model, Trace, Intervals
 
 
 class Queue(Model):
@@ -50,13 +50,16 @@ class Queue(Model):
         super().__init__(sim)
         self.__capacity = capacity
         self.__packets = deque()
-        self.__num_dropped = 0
         self.__data_requests = deque()
         # Statistics:
+        self.__num_dropped = 0
+        self.__num_arrived = 0
         self.__size_trace = Trace()
         self.__bitsize_trace = Trace()
         self.__size_trace.record(sim.stime, 0)
         self.__bitsize_trace.record(sim.stime, 0)
+        self.__arrival_intervals = Intervals()
+        self.__arrival_intervals.record(self.sim.stime)
 
     @property
     def capacity(self):
@@ -65,6 +68,16 @@ class Queue(Model):
     @property
     def num_dropped(self):
         return self.__num_dropped
+    
+    @property
+    def num_arrived(self):
+        return self.__num_arrived
+    
+    @property
+    def drop_ratio(self):
+        if self.__num_arrived > 0:
+            return self.__num_dropped / self.__num_arrived
+        return 0
 
     @property
     def size_trace(self):
@@ -73,6 +86,10 @@ class Queue(Model):
     @property
     def bitsize_trace(self):
         return self.__bitsize_trace
+    
+    @property
+    def arrival_intervals(self):
+        return self.__arrival_intervals
 
     def empty(self):
         return len(self) == 0
@@ -93,6 +110,8 @@ class Queue(Model):
         return tuple(self.__packets)
 
     def push(self, packet):
+        self.__num_arrived += 1
+        self.__arrival_intervals.record(self.sim.stime)
         if self.__data_requests:
             connection = self.__data_requests.popleft()
             connection.send(packet)

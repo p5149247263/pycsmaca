@@ -61,7 +61,7 @@ def test_collision_domain_network():
         assert cli.busy.timeavg() >= 0
         assert cli.num_packets_sent > 0
         assert_allclose(
-            cli.arrival_intervals.mean(),
+            cli.source_intervals.mean(),
             INTERVAL_MEAN,
             rtol=0.25
         )
@@ -179,6 +179,9 @@ def test_wireless_half_duplex_line_network():
         sid = sr.clients[i].sid
         assert sid is not None
         assert sr.clients[i].delay.mean() >= 0
+        if i > 0:
+            assert (sr.clients[i].arrival_intervals.mean() <
+                    sr.clients[i].source_intervals.mean())
 
     srv = sr.server
 
@@ -231,7 +234,10 @@ def test_wired_line_network():
         sid = sr.clients[i].sid
         assert sid is not None
         assert sr.clients[i].delay.mean() >= 0
-        assert sr.clients[i].arrival_intervals.mean() >= 0
+        assert sr.clients[i].source_intervals.mean() >= 0
+        if i > 0:
+            assert (sr.clients[i].arrival_intervals.mean() < 
+                    sr.clients[i].source_intervals.mean())
 
     srv = sr.server
 

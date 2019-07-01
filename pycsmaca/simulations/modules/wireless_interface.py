@@ -482,6 +482,13 @@ class Receiver(Model):
     @property
     def num_collisions(self):
         return self.__num_collisions
+    
+    @property
+    def collision_ratio(self):
+        num_ops = self.__num_received + self.__num_collisions
+        if num_ops > 0:
+            return self.__num_collisions / num_ops
+        return 0
 
     @property
     def busy_trace(self):
