@@ -40,7 +40,7 @@ def test_push_to_empty_queue_without_service_correctly_updates_content():
     assert len(queue) == 1
     assert queue.size() == 1
     assert queue.bitsize() == data_size
-    assert queue.as_tuple() == (packet,)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == (packet,)
 
 
 def test_push_up_to_full_queue_without_service_correctly_updates_content():
@@ -58,7 +58,7 @@ def test_push_up_to_full_queue_without_service_correctly_updates_content():
     assert len(queue) == 2
     assert queue.size() == 2
     assert queue.bitsize() == sum(data_size)
-    assert queue.as_tuple() == tuple(packets)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == tuple(packets)
 
 
 def test_push_to_full_queue_without_service_drops_last_packet():
@@ -83,7 +83,7 @@ def test_push_to_full_queue_without_service_drops_last_packet():
     assert len(queue) == 1
     assert queue.size() == 1
     assert queue.bitsize() == data_size[0]
-    assert queue.as_tuple() == (packets[0],)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == (packets[0],)
 
 
 def test_pop_from_empty_queue_raises_error():
@@ -111,7 +111,7 @@ def test_pop_extracts_packets_in_correct_order():
     assert len(queue) == 1
     assert queue.size() == 1
     assert queue.bitsize() == data_size[1]
-    assert queue.as_tuple() == (packets[1],)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == (packets[1],)
 
     assert queue.pop() == packets[1]
     assert queue.empty()
@@ -143,7 +143,7 @@ def test_finite_queue_without_service_writes_statistics():
     sim.stime = t5
     q.push(packets[3])  # stored after: packet[1], packet[3]
 
-    assert q.as_tuple() == (packets[1], packets[3])
+    assert tuple(qp.packet for qp in q.as_tuple()) == (packets[1], packets[3])
     assert q.size_trace.as_tuple() == (
         (t0, 0), (t1, 1), (t2, 2), (t4, 1), (t5, 2)
     )
@@ -225,13 +225,13 @@ def test_queue_with_service_passes_single_stored_packet_after_get_next_call():
     queue.push(packets[1])
 
     # Check that queue is updated, since no `get_next()` call was performed:
-    assert queue.as_tuple() == (packets[0], packets[1])
+    assert tuple(qp.packet for qp in queue.as_tuple()) == tuple(packets[0:2])
     sim.schedule.assert_not_called()
 
     # Check that after `get_next()` request the message is passed:
     sim.stime = t3
     queue.get_next(service=service)
-    assert queue.as_tuple() == (packets[1],)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == (packets[1],)
     sim.schedule.assert_called_once_with(
         0, service.handle_message, args=(packets[0],), kwargs={
             'connection': service_rev_conn, 'sender': queue,
@@ -240,7 +240,7 @@ def test_queue_with_service_passes_single_stored_packet_after_get_next_call():
 
     sim.stime = t4
     queue.push(packets[2])
-    assert queue.as_tuple() == (packets[1], packets[2])
+    assert tuple(qp.packet for qp in queue.as_tuple()) == tuple(packets[1:3])
 
     # Also make sure that size updates were written:
     assert queue.size_trace.as_tuple() == (
@@ -308,7 +308,7 @@ def test_queue_with_several_services_finds_right_connections():
     # were fulfilled previously:
     sim.stime = 10
     queue.push(pkt_3)
-    assert queue.as_tuple() == (pkt_3,)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == (pkt_3,)
     sim.schedule.assert_not_called()
 
     # Finally, the another module requests a packet, and it is immediately
@@ -342,7 +342,7 @@ def test_queue_accepts_packets_on_handle_message_call():
     pkt = NetworkPacket(data=AppData(size=123))
 
     queue.handle_message(pkt, sender=producer, connection=conn)
-    assert queue.as_tuple() == (pkt,)
+    assert tuple(qp.packet for qp in queue.as_tuple()) == (pkt,)
 
 
 #############################################################################

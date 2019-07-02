@@ -42,6 +42,7 @@ def collision_domain_network(
     client_class = namedtuple('Client', [
         'service_time', 'num_retries', 'queue_size', 'busy',
         'source_intervals', 'num_packets_sent', 'queue_drop_ratio',
+        'queue_wait',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_rx_collided', 'num_rx_success',
@@ -57,6 +58,7 @@ def collision_domain_network(
             source_intervals=cli.source.arrival_intervals.statistic(),
             num_packets_sent=cli.interfaces[0].transmitter.num_sent,
             queue_drop_ratio=cli.interfaces[0].queue.drop_ratio,
+            queue_wait=cli.interfaces[0].queue.wait_intervals,
         ) for cli in ret.data.clients
     ]
 
@@ -169,6 +171,7 @@ def wireless_half_duplex_line_network(
         'service_time', 'num_retries', 'queue_size', 'tx_busy', 'rx_busy',
         'source_intervals', 'num_packets_sent', 'delay', 'sid',
         'arrival_intervals', 'queue_drop_ratio', 'collision_ratio',
+        'queue_wait',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_rx_collided', 'num_rx_success',
@@ -195,6 +198,7 @@ def wireless_half_duplex_line_network(
             arrival_intervals=iface.queue.arrival_intervals.statistic(),
             queue_drop_ratio=iface.queue.drop_ratio,
             collision_ratio=iface.receiver.collision_ratio,
+            queue_wait=iface.queue.wait_intervals,
         ) for src, iface in zip(_client_sources, _client_ifaces)
     ]
     server = server_class(
@@ -240,7 +244,7 @@ def wired_line_network(
     client_class = namedtuple('Client', [
         'service_time', 'queue_size', 'tx_busy', 'rx_busy',
         'source_intervals', 'num_packets_sent', 'delay', 'sid',
-        'arrival_intervals', 'queue_drop_ratio',
+        'arrival_intervals', 'queue_drop_ratio', 'queue_wait',
     ])
     server_class = namedtuple('Server', [
         'arrival_intervals', 'num_packets_received',
@@ -265,6 +269,7 @@ def wired_line_network(
             sid=(src.source_id if src else None),
             arrival_intervals=out_if.queue.arrival_intervals.statistic(),
             queue_drop_ratio=out_if.queue.drop_ratio,
+            queue_wait=out_if.queue.wait_intervals,
         ) for src, (inp_if, out_if) in zip(_client_sources, _client_ifaces)
     ]
     server = server_class(

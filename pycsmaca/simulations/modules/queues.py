@@ -1,6 +1,21 @@
 from collections import deque
 
-from pydesim import Model, Trace, Intervals
+from pydesim import Model, Trace, Intervals, Statistic
+
+
+class QueuedPacket:
+    def __init__(self, packet, arrived_at):
+        self.packet = packet
+        self.arrived_at = arrived_at
+    
+    @property
+    def size(self):
+        return self.packet.size
+    
+    def __str__(self):
+        return ('QPkt('
+                f'{self.packet.sender_address}->{self.packet.receiver_address}'
+                f'{self.packet.size} bits, arrived_at={self.arrived_at})')
 
 
 class Queue(Model):
@@ -60,6 +75,7 @@ class Queue(Model):
         self.__bitsize_trace.record(sim.stime, 0)
         self.__arrival_intervals = Intervals()
         self.__arrival_intervals.record(self.sim.stime)
+        self.__wait_intervals = Statistic()
 
     @property
     def capacity(self):
@@ -90,6 +106,10 @@ class Queue(Model):
     @property
     def arrival_intervals(self):
         return self.__arrival_intervals
+    
+    @property
+    def wait_intervals(self):
+        return self.__wait_intervals
 
     def empty(self):
         return len(self) == 0
@@ -115,9 +135,11 @@ class Queue(Model):
         if self.__data_requests:
             connection = self.__data_requests.popleft()
             connection.send(packet)
+            self.__wait_intervals.append(0.0)
         else:
             if self.capacity is None or len(self) < self.capacity:
-                self.__packets.append(packet)
+                qp = QueuedPacket(packet, arrived_at=self.sim.stime)
+                self.__packets.append(qp)
                 self.__size_trace.record(self.sim.stime, len(self))
                 self.__bitsize_trace.record(self.sim.stime, self.bitsize())
             else:
@@ -125,13 +147,14 @@ class Queue(Model):
 
     def pop(self):
         try:
-            ret = self.__packets.popleft()
+            qp = self.__packets.popleft()
         except IndexError as err:
             raise ValueError('pop from empty Queue') from err
         else:
             self.__size_trace.record(self.sim.stime, len(self))
             self.__bitsize_trace.record(self.sim.stime, self.bitsize())
-            return ret
+            self.__wait_intervals.append(self.sim.stime - qp.arrived_at)
+            return qp.packet
 
     def get_next(self, service):
         connection = self._get_connection_to(service)
