@@ -7,7 +7,7 @@ def readme():
 
 
 setup(name='pycsmaca',
-      version='0.1.1',
+      version='0.1.2',
       description='Wireless networks models',
       long_description=readme(),
       classifiers=[
